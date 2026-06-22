@@ -1,0 +1,48 @@
+[project]
+name = "knowledge-base"
+version = "1.0.0"
+description = "Knowledge Base MCP service — neo4j-graphrag powered RAG for research PDFs"
+requires-python = ">=3.12"
+dependencies = [
+    "neo4j-graphrag>=1.17.0",
+    "neo4j>=5.27.0",
+    "mcp>=1.0.0",
+    "pypdf>=5.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "openai>=1.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-mock>=3.14.0",
+    "pytest-cov>=6.0.0",
+    "fpdf2>=2.8.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "integration: marks tests that require a running Neo4j instance",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
