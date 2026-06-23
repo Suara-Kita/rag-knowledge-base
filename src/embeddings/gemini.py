@@ -3,8 +3,8 @@ from neo4j_graphrag.embeddings.base import Embedder
 
 from src.config import settings
 
-GEMINI_INDEX_NAME = "chunk_embeddings"
-GEMINI_EMBEDDING_DIMS = 3072
+GEMINI_INDEX_NAME = settings.vector_index_name
+GEMINI_EMBEDDING_DIMS = settings.embedding_dims
 
 
 class GeminiEmbedder(Embedder):

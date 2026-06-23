@@ -56,7 +56,7 @@ def build_retriever(driver: Driver) -> VectorCypherRetriever:
     embedder = get_embedder()
     return VectorCypherRetriever(
         driver=driver,
-        index_name="chunk_embeddings",
+        index_name=settings.vector_index_name,
         embedder=embedder,
         retrieval_query=_retrieval_query,
         neo4j_database=settings.neo4j_database,
@@ -69,7 +69,7 @@ def build_filtered_retriever(driver: Driver, doc_filter: str) -> VectorCypherRet
     query = _filtered_retrieval_query.replace("$doc_filter", f'"{doc_filter}"')
     return VectorCypherRetriever(
         driver=driver,
-        index_name="chunk_embeddings",
+        index_name=settings.vector_index_name,
         embedder=embedder,
         retrieval_query=query,
         neo4j_database=settings.neo4j_database,

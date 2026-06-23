@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="openai/gpt-oss-120b")
     embedding_model: str = Field(default="google/gemini-embedding-2")
     embedding_dims: int = Field(default=3072)
+    vector_index_name: str = Field(default="chunk_embeddings")
 
     watch_dir: str = Field(default="./watch")
     processed_dir: str = Field(default="./processed")
