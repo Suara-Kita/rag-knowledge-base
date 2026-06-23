@@ -58,12 +58,12 @@ def _create_indexes(driver) -> None:
     query = """
         CREATE VECTOR INDEX chunk_embeddings IF NOT EXISTS
         FOR (n:Chunk) ON (n.embedding)
-        OPTIONS { indexConfig: { `vector.dimensions`: toInteger(1536), `vector.similarity_function`: "cosine" } }
+        OPTIONS { indexConfig: { `vector.dimensions`: toInteger($dims), `vector.similarity_function`: "cosine" } }
     """
     try:
         with driver.session(database=settings.neo4j_database) as session:
-            session.run(query).consume()
-        logger.info("Vector index 'chunk_embeddings' ready")
+            session.run(query, dims=settings.embedding_dims).consume()
+        logger.info("Vector index 'chunk_embeddings' ready (%d dims)", settings.embedding_dims)
     except Exception as e:
         logger.warning("Could not create vector index: %s", e)
 

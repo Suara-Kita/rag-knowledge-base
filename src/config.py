@@ -13,7 +13,8 @@ class Settings(BaseSettings):
     openai_base_url: str = Field(default="https://openrouter.ai/api/v1")
     openai_api_key: str = Field(default="")
     llm_model: str = Field(default="openai/gpt-oss-120b")
-    embedding_model: str = Field(default="openai/gpt-oss-120b")
+    embedding_model: str = Field(default="google/gemini-embedding-2")
+    embedding_dims: int = Field(default=3072)
 
     watch_dir: str = Field(default="./watch")
     processed_dir: str = Field(default="./processed")
