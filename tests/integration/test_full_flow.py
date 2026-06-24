@@ -1,4 +1,3 @@
-import asyncio
 import os
 from pathlib import Path
 
@@ -8,14 +7,16 @@ pytestmark = pytest.mark.integration
 
 
 @pytest.mark.asyncio
-async def test_full_flow_pdf_to_query(
+async def test_full_flow_md_to_query(
     neo4j_driver,
     monkeypatch,
     tmp_path: Path,
 ) -> None:
-    """Drop a PDF in watch/ → poller picks it → query finds it."""
+    """Drop a Markdown file in watch/ → poller picks it → query finds it."""
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
 
     watch = tmp_path / "watch"
     processed = tmp_path / "processed"
@@ -26,33 +27,23 @@ async def test_full_flow_pdf_to_query(
     monkeypatch.setattr("src.config.settings.processed_dir", str(processed))
     monkeypatch.setattr("src.config.settings.watch_interval_ms", 30000)
 
-    pdf_content = (
-        b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
-        b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
-        b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
-        b"/Resources<</Font<</F1 4 0 R>>>>/Contents 5 0 R>>endobj\n"
-        b"4 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n"
-        b"5 0 obj<</Length 44>>stream\n"
-        b"BT /F1 12 Tf 100 700 Td (Johor needs early warning systems for floods.) Tj ET\n"
-        b"endstream\nendobj\nxref\n0 6\n0000000000 65535 f \n"
-        b"0000000009 00000 n \n0000000058 00000 n \n0000000079 00000 n \n"
-        b"0000000131 00000 n \n0000000220 00000 n \n"
-        b"trailer<</Size 6/Root 1 0 R>>\nstartxref\n269\n%%EOF\n"
+    md_path = watch / "research.md"
+    md_path.write_text(
+        "# Johor Flood Research\n\nJohor needs early warning systems for floods.",
+        encoding="utf-8",
     )
-    pdf_path = watch / "research.pdf"
-    pdf_path.write_bytes(pdf_content)
 
-    from src.watcher.poller import _ingest_pdfs
+    from src.watcher.poller import _ingest_files
 
-    await _ingest_pdfs()
+    await _ingest_files()
 
-    assert not pdf_path.exists()
-    assert (processed / "research.pdf").exists()
+    assert not md_path.exists()
+    assert (processed / "research.md").exists()
 
     with neo4j_driver.session() as session:
         docs = session.run("MATCH (d:Document) RETURN d.path AS path").data()
         paths = [d["path"] for d in docs]
-        assert "research.pdf" in paths
+        assert "research.md" in paths
 
     from src.db.neo4j import get_driver
     from src.knowledge.retriever import build_rag, search

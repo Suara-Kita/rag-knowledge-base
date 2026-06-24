@@ -30,26 +30,15 @@ async def test_search_without_data(neo4j_driver) -> None:
 async def test_search_after_ingestion(neo4j_driver) -> None:
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
 
-    from neo4j_graphrag.embeddings import OpenAIEmbeddings
-    from neo4j_graphrag.llm import OpenAILLM
-    from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
+    from src.knowledge.pipeline import build_pipeline
 
-    llm = OpenAILLM(model_name="openai/gpt-oss-120b", model_params={"temperature": 0})
-    embedder = OpenAIEmbeddings(model="openai/gpt-oss-120b")
+    pipeline = build_pipeline(neo4j_driver)
 
-    database = os.getenv("NEO4J_DATABASE", "neo4j")
-    pipeline = SimpleKGPipeline(
-        llm=llm,
-        driver=neo4j_driver,
-        embedder=embedder,
-        from_file=False,
-        on_error="IGNORE",
-        neo4j_database=database,
-    )
-
-    text = "Flood mitigation in Johor requires building retention ponds and early warning systems."
-    await pipeline.run_async(text=text, file_path="flood-mitigation.pdf")
+    text = "# Flood Mitigation\n\nFlood mitigation in Johor requires building retention ponds and early warning systems."
+    await pipeline.run_async(text=text, file_path="flood-mitigation.md")
 
     rag = build_rag(neo4j_driver)
     answer = search(rag, "What flood mitigation strategies are mentioned?", top_k=5)

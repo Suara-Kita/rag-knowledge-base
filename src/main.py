@@ -55,15 +55,16 @@ def _ensure_database(driver) -> None:
 
 
 def _create_indexes(driver) -> None:
-    query = """
-        CREATE VECTOR INDEX chunk_embeddings IF NOT EXISTS
+    # Index name cannot be parameterized in Cypher schema commands — settings value is safe (config-only).
+    query = f"""
+        CREATE VECTOR INDEX {settings.vector_index_name} IF NOT EXISTS
         FOR (n:Chunk) ON (n.embedding)
-        OPTIONS { indexConfig: { `vector.dimensions`: toInteger(1536), `vector.similarity_function`: "cosine" } }
+        OPTIONS {{ indexConfig: {{ `vector.dimensions`: toInteger($dims), `vector.similarity_function`: "cosine" }} }}
     """
     try:
         with driver.session(database=settings.neo4j_database) as session:
-            session.run(query).consume()
-        logger.info("Vector index 'chunk_embeddings' ready")
+            session.run(query, dims=settings.embedding_dims).consume()
+        logger.info("Vector index '%s' ready (%d dims)", settings.vector_index_name, settings.embedding_dims)
     except Exception as e:
         logger.warning("Could not create vector index: %s", e)
 

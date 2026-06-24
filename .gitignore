@@ -9,9 +9,12 @@ venv/
 env/
 .env
 watch/*
+watch-johor-research/*
 processed/*
 !watch/.gitkeep
+!watch-johor-research/.gitkeep
 !processed/.gitkeep
+*.dump
 *.log
 .pytest_cache/
 .mypy_cache/
