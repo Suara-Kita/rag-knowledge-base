@@ -44,6 +44,9 @@ def test_gemini_embedder_returns_correct_dimensions(gemini_embedder):
 
 @pytest.mark.asyncio
 async def test_gemini_ingest_and_retrieve(neo4j_driver, gemini_embedder, gemini_index):
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
+
     from neo4j_graphrag.retrievers import VectorCypherRetriever
     from neo4j_graphrag.generation import GraphRAG
     from neo4j_graphrag.llm import OpenAILLM

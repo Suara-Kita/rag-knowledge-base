@@ -30,6 +30,8 @@ def test_vector_index_creation(neo4j_driver, vector_index_name) -> None:
 async def test_pipeline_creates_document_and_chunks(neo4j_driver) -> None:
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
 
     from src.knowledge.pipeline import build_pipeline
 

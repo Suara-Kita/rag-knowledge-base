@@ -15,6 +15,8 @@ async def test_full_flow_md_to_query(
     """Drop a Markdown file in watch/ → poller picks it → query finds it."""
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
 
     watch = tmp_path / "watch"
     processed = tmp_path / "processed"

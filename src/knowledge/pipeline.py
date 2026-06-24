@@ -1,6 +1,6 @@
 from neo4j import Driver
 from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
-from neo4j_graphrag.llm import OpenAILLM
+from neo4j_graphrag.llm import AnthropicLLM
 
 from src.config import settings
 from src.embeddings.factory import get_embedder
@@ -27,9 +27,19 @@ _RELATIONS = [
 
 
 def build_pipeline(driver: Driver) -> SimpleKGPipeline:
-    llm = OpenAILLM(
-        model_name=settings.llm_model,
-        model_params={"temperature": 0},
+    # Used for entity/relationship extraction only; query-time answer
+    # generation still uses settings.llm_model (gpt-oss) via retriever.py.
+    llm = AnthropicLLM(
+        model_name=settings.entity_llm_model,
+        # api_key explicit (falls back to the SDK's own ANTHROPIC_API_KEY env
+        # lookup when unset) so the key actually goes through Settings/.env
+        # instead of silently depending on load_dotenv() populating the same
+        # env var name by coincidence.
+        api_key=settings.anthropic_api_key or None,
+        # 8192 leaves headroom for dense chunks (many entities/relations per
+        # chunk) without truncating mid-JSON — 4096 was cutting it close for
+        # max_chars=4000 chunks with heavy entity density.
+        model_params={"temperature": 0, "max_tokens": 8192},
     )
     embedder = get_embedder()
 

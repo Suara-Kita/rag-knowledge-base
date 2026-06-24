@@ -17,3 +17,13 @@ def test_env_overrides(monkeypatch) -> None:
     s = Settings()
     assert s.neo4j_uri == "bolt://custom:9999"
     assert s.watch_interval_ms == 5000
+
+
+def test_watch_dirs_single_path() -> None:
+    s = Settings(_env_file=None, watch_dir="./watch")
+    assert s.watch_dirs == ["./watch"]
+
+
+def test_watch_dirs_multiple_paths() -> None:
+    s = Settings(_env_file=None, watch_dir="./watch, ./watch-johor-economy ,./watch-flood")
+    assert s.watch_dirs == ["./watch", "./watch-johor-economy", "./watch-flood"]

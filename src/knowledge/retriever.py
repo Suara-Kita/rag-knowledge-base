@@ -7,6 +7,15 @@ from neo4j_graphrag.llm import OpenAILLM
 from src.config import settings
 from src.embeddings.factory import get_embedder
 
+_GROUNDING_RULE = (
+    "IMPORTANT: Base your answer strictly on facts that appear in the provided context. "
+    "Every claim in your answer must be traceable to the context text. "
+    "If the context contains no relevant information for the question, "
+    "respond with only this sentence: "
+    "'Maaf, maklumat yang diperlukan tidak terdapat dalam konteks yang diberikan.'\n\n"
+)
+
+
 def _build_template(works_cited: str = "") -> RagTemplate:
     if works_cited:
         instructions = (
@@ -28,7 +37,7 @@ def _build_template(works_cited: str = "") -> RagTemplate:
             "names as numbered references at the end under a '## References' heading. "
             "Only list documents you actually cited."
         )
-    return RagTemplate(system_instructions=instructions)
+    return RagTemplate(system_instructions=_GROUNDING_RULE + instructions)
 
 
 _retrieval_query = """

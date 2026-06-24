@@ -30,6 +30,8 @@ async def test_search_without_data(neo4j_driver) -> None:
 async def test_search_after_ingestion(neo4j_driver) -> None:
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
 
     from src.knowledge.pipeline import build_pipeline
 
