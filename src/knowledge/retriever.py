@@ -1,3 +1,5 @@
+import re
+
 from neo4j import Driver
 from neo4j_graphrag.retrievers import VectorCypherRetriever
 from neo4j_graphrag.generation import GraphRAG
@@ -7,12 +9,28 @@ from neo4j_graphrag.llm import OpenAILLM
 from src.config import settings
 from src.embeddings.factory import get_embedder
 
+# Strip OpenAI's internal 【n†...】 file-citation annotations that leak through
+# even when the prompt requests [n] format.
+_OPENAI_CITATION_RE = re.compile(r'【\d+†[^】]*】')
+
 _GROUNDING_RULE = (
     "IMPORTANT: Base your answer strictly on facts that appear in the provided context. "
     "Every claim in your answer must be traceable to the context text. "
     "If the context contains no relevant information for the question, "
     "respond with only this sentence: "
     "'Maaf, maklumat yang diperlukan tidak terdapat dalam konteks yang diberikan.'\n\n"
+    "FORMATTING: Before giving a detailed answer, first ask the user in one short bilingual sentence "
+    "what format they prefer — for example: "
+    "'Adakah anda mahu jawapan dalam bentuk perenggan atau senarai? / "
+    "Would you prefer the answer in paragraphs or as a list?' "
+    "Then give a 1–2 sentence summary of what you found. "
+    "Wait for the user to reply with their format preference before giving the full answer. "
+    "Exception: if the user's question already specifies a format "
+    "(e.g. 'list', 'senarai', 'jadual', 'table', 'bullet', 'points', 'ringkasan'), "
+    "skip the format question and answer directly in that format.\n\n"
+    "CITATIONS: Use only plain square-bracket numbers like [1] or [4] for inline citations. "
+    "NEVER use 【】 brackets, dagger symbols (†), or line-range suffixes like L1-L4. "
+    "Those formats are forbidden.\n\n"
 )
 
 
@@ -105,4 +123,4 @@ def search(rag: GraphRAG, question: str, top_k: int = 5) -> str:
         query_text=question,
         retriever_config={"top_k": top_k},
     )
-    return result.answer
+    return _OPENAI_CITATION_RE.sub('', result.answer)
