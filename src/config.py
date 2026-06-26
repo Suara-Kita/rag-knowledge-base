@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     watch_interval_ms: int = Field(default=30000)
 
     log_level: str = Field(default="INFO")
+    redis_url: str = Field(default="redis://default:redis@localhost:6380")
 
     @property
     def watch_dirs(self) -> list[str]:
