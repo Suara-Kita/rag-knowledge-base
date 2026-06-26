@@ -13,9 +13,13 @@ from neo4j_graphrag.types import LLMMessage
 from src.config import settings
 from src.embeddings.factory import get_embedder
 
-# Strip OpenAI's internal 【n†...】 file-citation annotations that leak through
-# even when the prompt requests [n] format.
+# Strip OpenAI's internal citation annotations.
+# Bare 【n】 or range 【n‑m】/【n–m】 → [n] (keep first number); then strip dagger-form.
+_OPENAI_CITATION_BARE_RE = re.compile(r'【(\d+)[‑–\-]?\d*】')
 _OPENAI_CITATION_RE = re.compile(r'【\d+†[^】]*】')
+
+# Fix citations that have a space before the sentence-ending period: "[1] ." → "[1]."
+_CITATION_SPACE_PERIOD_RE = re.compile(r'(\[\d+(?:,\s*\d+)*\])\s+\.')
 
 # Markdown patterns to strip from retrieved chunk text before it reaches the LLM.
 # Source documents use *, -, ## etc. — if left in the context the model mirrors
@@ -26,10 +30,6 @@ _MD_NUMBERED = re.compile(r'^[ \t]*\d+\.\s+', re.MULTILINE)
 _MD_BOLD = re.compile(r'\*{1,3}([^*]+?)\*{1,3}')
 _MD_EXTRA_BLANK = re.compile(r'\n{3,}')
 
-# Keywords that mean the user explicitly wants a formatted list output.
-_FORMAT_REQUEST_RE = re.compile(
-    r'\b(senarai|list|bullet|poin|jadual|table|nombor|numbered)\b', re.IGNORECASE
-)
 
 
 def _strip_markdown(text: str) -> str:
@@ -43,22 +43,54 @@ def _strip_markdown(text: str) -> str:
 
 
 _REF_SECTION_RE = re.compile(r'\n(?=## (?:References|Rujukan))', re.IGNORECASE)
+_MD_EXTENSION_RE = re.compile(r'(\.md)(?=\b|\s|$|\))', re.IGNORECASE)
 
 
-def _strip_output_lists(text: str) -> str:
-    """Strip list markers from the LLM's output as a safety net.
+def _strip_md_extensions(text: str) -> str:
+    """Remove .md file extensions from reference entries so they read as document titles."""
+    parts = _REF_SECTION_RE.split(text, maxsplit=1)
+    if len(parts) == 1:
+        return text
+    return parts[0] + "\n" + _MD_EXTENSION_RE.sub('', parts[1])
 
-    Preserves the ## References / ## Rujukan heading so inline citations
-    still have a matching legend. Only strips other markdown structure.
+
+_REF_ENTRY_RE = re.compile(r'^\[(\d+(?:,\s*\d+)*)\]\s+(.+)$', re.MULTILINE)
+
+
+def _dedup_references(text: str) -> str:
+    """Collapse repeated reference entries that point to the same document title.
+
+    E.g. [1] Doc X and [5] Doc X → [1, 5] Doc X
     """
     parts = _REF_SECTION_RE.split(text, maxsplit=1)
-    body = parts[0]
-    tail = parts[1] if len(parts) > 1 else ""
-    body = _MD_HEADING.sub(r'\1', body)
-    body = _MD_BULLET.sub('', body)
-    body = _MD_NUMBERED.sub('', body)
-    body = _MD_EXTRA_BLANK.sub('\n\n', body)
-    return (body.strip() + ("\n\n" + tail if tail else ""))
+    if len(parts) == 1:
+        return text
+
+    body, refs_block = parts[0], parts[1]
+
+    doc_to_nums: dict[str, list[str]] = {}
+    order: list[str] = []
+    for m in _REF_ENTRY_RE.finditer(refs_block):
+        nums_str, doc = m.group(1), m.group(2).strip()
+        nums = [n.strip() for n in nums_str.split(',')]
+        if doc not in doc_to_nums:
+            doc_to_nums[doc] = []
+            order.append(doc)
+        doc_to_nums[doc].extend(nums)
+
+    if not order:
+        return text
+
+    heading_match = re.match(r'(##\s+\w+\n)', refs_block)
+    heading = heading_match.group(1) if heading_match else "## Rujukan\n"
+
+    lines = [heading]
+    for doc in order:
+        nums = sorted(set(doc_to_nums[doc]), key=lambda x: int(x))
+        lines.append(f"[{', '.join(nums)}] {doc}")
+
+    return body + "\n" + "\n".join(lines)
+
 
 
 class ProseGraphRAG(GraphRAG):
@@ -106,30 +138,38 @@ class ProseGraphRAG(GraphRAG):
 
 _GROUNDING_RULE = (
     "IMPORTANT: Base your answer strictly on facts that appear in the provided context. "
-    "Every claim in your answer must be traceable to the context text. "
-    "If the context contains no relevant information for the question, respond with only: "
+    "Every claim must be traceable to the context text. "
+    "If the context contains no relevant information, respond with only: "
     "'Maaf, maklumat yang diperlukan tidak terdapat dalam konteks yang diberikan.' "
     "(if the question was in Bahasa Melayu) or "
     "'Sorry, the required information is not available in the provided context.' "
     "(if the question was in English).\n\n"
-    "LANGUAGE — THIS IS MANDATORY: Detect the language of the user's question and reply "
-    "exclusively in that same language. "
-    "If the question is written in English, your entire answer MUST be in English — "
-    "do NOT switch to Bahasa Melayu even if the source context is in Bahasa Melayu. "
-    "If the question is written in Bahasa Melayu, your entire answer MUST be in Bahasa Melayu. "
-    "Translate facts from the context into the user's language as needed. "
-    "Never mix languages in a single response.\n\n"
-    "FORMATTING — THIS IS MANDATORY: "
-    "Write your answer as a single paragraph of flowing prose. "
-    "NEVER use bullet points (-, *, •), numbered lists (1. 2. 3.), or markdown headings (##). "
-    "NEVER add a summary section. "
-    "Weave all key information into one continuous paragraph of 3–5 sentences. "
-    "The ONLY exception: if the user's message explicitly contains a word like "
-    "'senarai', 'list', 'bullet', 'poin', 'jadual', 'table', 'detail', 'lanjut', or 'explain' — "
-    "then you may expand into multiple paragraphs or use that specific format.\n\n"
-    "CITATIONS: Use only plain square-bracket numbers like [1] or [4] for inline citations. "
-    "NEVER use 【】 brackets, dagger symbols (†), or line-range suffixes like L1-L4. "
-    "Those formats are forbidden.\n\n"
+
+    "LANGUAGE — MANDATORY: Detect the language of the user's question and reply exclusively "
+    "in that same language. Translate facts from context as needed. Never mix languages.\n\n"
+
+    "OUTPUT FORMATTING & STYLE — MANDATORY:\n"
+    "Your goal is highly structured, scannable, visually appealing responses. "
+    "Avoid dense walls of text.\n\n"
+
+    "1. TYPOGRAPHY HIERARCHY\n"
+    "   - Use ## headers to separate macro-topics into distinct modules.\n"
+    "   - Use --- horizontal rules to separate major shifts in context.\n\n"
+
+    "2. SCANNABILITY\n"
+    "   - Never write body paragraphs longer than 3 lines.\n"
+    "   - Bold **key phrases**, **metrics**, **monetary values**, and **critical dates** "
+    "to guide the reader's eye. Do NOT bold entire sentences.\n\n"
+
+    "3. STRUCTURED DATA LAYOUTS\n"
+    "   - Bullet points: use for comparative data, lists of initiatives, or distinct items.\n"
+    "   - Tables: whenever comparing 3 or more numerical metrics, tiers, or categories "
+    "(e.g. salary brackets, project counts, benchmarks), format into a clean Markdown table.\n"
+    "   - Blockquotes: use > for critical highlights, core objectives, or summary insights.\n\n"
+
+    "4. CITATIONS\n"
+    "   Use only plain square-bracket numbers like [1] or [4] inline. "
+    "NEVER use 【】 brackets, dagger symbols (†), or line-range suffixes like L1-L4.\n\n"
 )
 
 
@@ -233,7 +273,9 @@ def search(rag: GraphRAG, question: str, top_k: int = 5) -> str:
         query_text=question,
         retriever_config={"top_k": top_k},
     )
-    answer = _OPENAI_CITATION_RE.sub('', result.answer)
-    if not _FORMAT_REQUEST_RE.search(question):
-        answer = _strip_output_lists(answer)
+    answer = _OPENAI_CITATION_BARE_RE.sub(r'[\1]', result.answer)  # 【n】/【n‑m】 → [n]
+    answer = _OPENAI_CITATION_RE.sub('', answer)                   # strip dagger form
+    answer = _CITATION_SPACE_PERIOD_RE.sub(r'\1.', answer)         # [1] . → [1].
+    answer = _strip_md_extensions(answer)                           # strip .md from refs
+    answer = _dedup_references(answer)                              # collapse duplicate docs
     return answer
