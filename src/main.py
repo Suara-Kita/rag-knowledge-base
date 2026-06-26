@@ -1,8 +1,11 @@
 import asyncio
+import json
 import logging
 import os
 import sys
+import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 
@@ -26,9 +29,59 @@ from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse, Response  # noqa: E402
 from starlette.routing import Mount, Route  # noqa: E402
 
+import redis.asyncio as aioredis  # noqa: E402
+
 from src.db.neo4j import get_driver, close_driver  # noqa: E402
 from src.tools.query import get_tools, handle_call_tool  # noqa: E402
 from src.watcher.poller import start_poller  # noqa: E402
+
+_VOTER_INPUT_QUEUE = "queue:voter_inputs"
+_NO_MATCH_BM = "Maaf, maklumat yang diperlukan tidak terdapat dalam konteks yang diberikan"
+_NO_MATCH_EN = "the required information is not available in the provided context"
+_redis_client: aioredis.Redis | None = None
+
+
+def _is_unmatched(answer: str) -> bool:
+    return _NO_MATCH_BM in answer or _NO_MATCH_EN in answer
+
+
+async def _publish_unmatched(question: str) -> None:
+    global _redis_client
+    if _redis_client is None:
+        try:
+            _redis_client = aioredis.Redis.from_url(settings.redis_url, decode_responses=True)
+            await _redis_client.ping()
+            logger.info("Redis reconnected — unmatched queries will be queued")
+        except Exception as e:
+            logger.warning("Redis unavailable, skipping unmatched publish: %s", e)
+            _redis_client = None
+            return
+    try:
+        payload = json.dumps({
+            "pipeline_metadata": {
+                "ingestion_id": str(uuid.uuid4()),
+                "source_channel": "web_portal",
+                "ingested_at": datetime.now(timezone.utc).isoformat(),
+                "trace_url": None,
+            },
+            "source_profile": {
+                "client_identifier": "onn_ai",
+                "display_name": "Onn AI",
+                "contact_info": None,
+                "inferred_constituency": None,
+            },
+            "content_payload": {
+                "raw_text": question,
+                "content_type": "text_only",
+                "media_attachments": [],
+            },
+            "context_anchor": None,
+        })
+        await _redis_client.lpush(_VOTER_INPUT_QUEUE, payload)
+        logger.info("Unmatched onn-ai query pushed to %s: %.80s", _VOTER_INPUT_QUEUE, question)
+    except Exception:
+        logger.warning("Failed to publish unmatched query to Redis", exc_info=True)
+        _redis_client = None
 
 mcp_server = Server("suara-kita-knowledge")
 sse = SseServerTransport("/messages/")
@@ -61,7 +114,10 @@ async def handle_query(request: Request) -> JSONResponse:
     raw_top_k = body.get("top_k")
     top_k = int(raw_top_k) if isinstance(raw_top_k, (int, float)) and raw_top_k > 0 else 5
     results = await handle_call_tool("query_knowledge", {"question": question, "top_k": top_k})
-    return JSONResponse({"answer": results[0].text if results else ""})
+    answer = results[0].text if results else ""
+    if _is_unmatched(answer):
+        await _publish_unmatched(question)
+    return JSONResponse({"answer": answer})
 
 
 def _ensure_database(driver) -> None:
@@ -91,6 +147,7 @@ def _create_indexes(driver) -> None:
 
 @asynccontextmanager
 async def lifespan(app: Starlette):
+    global _redis_client
     driver = get_driver()
     try:
         driver.verify_connectivity()
@@ -101,6 +158,14 @@ async def lifespan(app: Starlette):
 
     _ensure_database(driver)
     _create_indexes(driver)
+
+    try:
+        _redis_client = aioredis.Redis.from_url(settings.redis_url, decode_responses=True)
+        await _redis_client.ping()
+        logger.info("Redis connected — unmatched queries will be queued")
+    except Exception as e:
+        logger.warning("Redis unavailable (%s) — unmatched queries will not be published", e)
+        _redis_client = None
 
     stop_event = asyncio.Event()
     watcher_task = asyncio.create_task(start_poller(stop_event))
@@ -114,6 +179,8 @@ async def lifespan(app: Starlette):
         await watcher_task
     except asyncio.CancelledError:
         pass
+    if _redis_client:
+        await _redis_client.aclose()
     close_driver()
     logger.info("Shutdown complete")
 

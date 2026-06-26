@@ -42,7 +42,7 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
-_REF_SECTION_RE = re.compile(r'\n(?=## (?:References|Rujukan))', re.IGNORECASE)
+_REF_SECTION_RE = re.compile(r'\n(?=## (?:References|Rujukan)\s*(?:\n|$))', re.IGNORECASE)
 _MD_EXTENSION_RE = re.compile(r'(\.md)(?=\b|\s|$|\))', re.IGNORECASE)
 
 
@@ -81,7 +81,7 @@ def _dedup_references(text: str) -> str:
     if not order:
         return text
 
-    heading_match = re.match(r'(##\s+\w+\n)', refs_block)
+    heading_match = re.match(r'(## (?:References|Rujukan)\s*\n)', refs_block, re.IGNORECASE)
     heading = heading_match.group(1) if heading_match else "## Rujukan\n"
 
     lines = [heading]
