@@ -77,7 +77,7 @@ def get_tools() -> list[Tool]:
                     "top_k": {
                         "type": "integer",
                         "description": "Number of results to return (default 5)",
-                        "default": 5,
+                        "default": 15,
                     },
                 },
                 "required": ["question"],

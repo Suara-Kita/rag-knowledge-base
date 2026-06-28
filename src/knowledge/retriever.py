@@ -268,7 +268,7 @@ def build_filtered_rag(driver: Driver, doc_filter: str, works_cited: str = "") -
     return ProseGraphRAG(llm=_build_llm(), retriever=build_filtered_retriever(driver, doc_filter), prompt_template=_build_template(works_cited))
 
 
-def search(rag: GraphRAG, question: str, top_k: int = 5) -> str:
+def search(rag: GraphRAG, question: str, top_k: int = 15) -> str:
     result = rag.search(
         query_text=question,
         retriever_config={"top_k": top_k},
