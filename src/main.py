@@ -103,6 +103,36 @@ async def handle_sse(request: Request) -> Response:
     return Response()
 
 
+async def _track_stats(client: aioredis.Redis, unmatched: bool) -> None:
+    try:
+        pipe = client.pipeline()
+        pipe.incr("stats:onn-ai:questions_asked")
+        if unmatched:
+            pipe.incr("stats:onn-ai:maklum_balas")
+        await pipe.execute()
+    except Exception:
+        logger.warning("Failed to track onn-ai stats", exc_info=True)
+
+
+async def handle_stats(request: Request) -> JSONResponse:
+    if _redis_client is None:
+        return JSONResponse({"questions": None, "maklumBalas": None})
+    try:
+        questions, maklum_balas = await asyncio.wait_for(
+            asyncio.gather(
+                _redis_client.get("stats:onn-ai:questions_asked"),
+                _redis_client.get("stats:onn-ai:maklum_balas"),
+            ),
+            timeout=2.0,
+        )
+        return JSONResponse({
+            "questions": int(questions or 0),
+            "maklumBalas": int(maklum_balas or 0),
+        })
+    except Exception:
+        return JSONResponse({"questions": None, "maklumBalas": None})
+
+
 async def handle_query(request: Request) -> JSONResponse:
     try:
         body = await request.json()
@@ -115,8 +145,11 @@ async def handle_query(request: Request) -> JSONResponse:
     top_k = int(raw_top_k) if isinstance(raw_top_k, (int, float)) and raw_top_k > 0 else 5
     results = await handle_call_tool("query_knowledge", {"question": question, "top_k": top_k})
     answer = results[0].text if results else ""
-    if _is_unmatched(answer):
+    unmatched = _is_unmatched(answer)
+    if unmatched:
         await _publish_unmatched(question)
+    if _redis_client is not None:
+        asyncio.create_task(_track_stats(_redis_client, unmatched))
     return JSONResponse({"answer": answer})
 
 
@@ -189,6 +222,7 @@ app = Starlette(
     routes=[
         Route("/sse", endpoint=handle_sse, methods=["GET"]),
         Route("/query", endpoint=handle_query, methods=["POST"]),
+        Route("/stats", endpoint=handle_stats, methods=["GET"]),
         Mount("/messages/", app=sse.handle_post_message),
     ],
     lifespan=lifespan,
