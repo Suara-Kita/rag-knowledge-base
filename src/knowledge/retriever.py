@@ -101,6 +101,17 @@ class ProseGraphRAG(GraphRAG):
     Calls the retriever and LLM each exactly once.
     """
 
+    def _build_query(self, query_text: str, message_history=None) -> str:
+        base = super()._build_query(query_text, message_history)
+        # Stored chunk embeddings include the "## Section heading" as the first
+        # line, so they sit in "heading-style" embedding space. Natural language
+        # questions land in a different region, causing poor retrieval.
+        # Prefixing the retrieval query with "##" closes that distribution gap
+        # without affecting the original question sent to the LLM.
+        if not base.startswith("#"):
+            return f"## {base}"
+        return base
+
     def search(
         self,
         query_text: str = "",
